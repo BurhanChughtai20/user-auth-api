@@ -1,20 +1,37 @@
-// controller/user/forgotPassword.ts
-import { Request, Response } from "express";
+import { Request, Response, NextFunction } from "express";
+import { generateOtp } from "../../services/otp.service";
+import { sendOtpMail } from "../../services/mail.service";
+import { findUserByEmail } from "../../services/user.service";
+import { AppError } from "../../utils/ApiError";
 
-const ForgotPassword = async (req: Request, res: Response) => {
+const ForgotPassword = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const user = (req as any).user;
-    const { otp } = req.body;
+    const { email } = req.body;
+    if (!email) return next(new AppError("Email is required", 400));
 
-    // Save OTP in DB for that user
+    const user = await findUserByEmail(email);
+    
+    if (!user) {
+      return next(new AppError("No user found with this email", 404));
+    }
+
+    const otp = generateOtp();
+    
     user.otp = otp;
+    user.otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+    user.isResetVerified = false; 
+    
     await user.save();
 
+    await sendOtpMail(email, otp);
+
     return res.status(200).json({
-      message: "OTP sent to your email for password reset"
+      success: true,
+      message: "Password reset OTP sent to your email",
     });
-  } catch (error) {
-    return res.status(500).json({ message: "Server error during forgot password", error });
+  } catch (error: any) {
+    console.error("Forgot Password Error:", error);
+    next(new AppError(error.message || "Internal Server Error", 500));
   }
 };
 

@@ -1,24 +1,40 @@
-import { Request, Response } from "express"; 
+import { Request, Response, NextFunction } from "express";
+import { hashPassword } from "../../services/hashedPassword.service";
+import { findUserByEmail } from "../../services/user.service";
+import { AppError } from "../../utils/ApiError";
 
-const ResetPassword = async (req: Request, res: Response) => {
+const ResetPassword = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { password } = req.body;
-    const user = (req as any).user;
+    const { email, password } = req.body;
 
-    if (!user.isResetVerified) {
-      return res.status(403).json({ message: "OTP verification required" });
+    // 1. Validation
+    if (!email || !password) {
+      return next(new AppError("Email and new password are required", 400));
+    }
+    const user = await findUserByEmail(email).select("+isResetVerified");
+
+    if (!user) {
+      return next(new AppError("User not found", 404));
     }
 
-    user.password = req.body.password;
+    if (!user.isResetVerified) {
+      return next(new AppError("OTP verification required before resetting password", 403));
+    }
+
+    user.password = await hashPassword(password);
     user.otp = undefined;
+    user.otpExpiresAt = undefined;
     user.isResetVerified = false;
-     
+
     await user.save();
-    return res.status(200).json({ 
-      message: "Password reset successful", 
+
+    return res.status(200).json({
+      success: true,
+      message: "Password reset successful. You can now login.",
     });
-  } catch (error) {
-    return res.status(500).json({ message: "Server error during password reset", error });
+  } catch (err: any) {
+    console.error("Reset Password Error:", err);
+    next(new AppError(err.message || "Internal Server Error", 500));
   }
 };
 

@@ -1,22 +1,24 @@
-import { Request, Response } from "express"; 
-import User from "../../model/userSchema";
+import { Response, NextFunction } from "express";
+import User from "../../model/user.model";
+import { AppError } from "../../utils/ApiError";
+import { AuthRequest } from "../../middleware/auth.middleware";
 
-const Logout = async (req: Request, res: Response) => {
+const Logout = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const user = (req as any).user; // middleware ne user attach kia hoga
-
-    if (!user) {
-      return res.status(401).json({ message: "Unauthorized - No user found" });
+    if (!req.user || !req.user._id) {
+      return next(new AppError("User not found in request", 401));
     }
-
-    // ✅ DB se token remove
-    await User.findByIdAndUpdate(user._id, { $set: { token: null } });
+    await User.findByIdAndUpdate(req.user._id, { 
+      $set: { token: null } 
+    });
 
     return res.status(200).json({
+      success: true,
       message: "Logout successful. Token removed.",
     });
-  } catch (error) {
-    return res.status(500).json({ message: "Server error during logout", error });
+  } catch (error: any) {
+    console.error("Logout Error:", error);
+    next(new AppError(error.message || "Server error during logout", 500));
   }
 };
 
